@@ -10,9 +10,11 @@ services:
       - "8080:8080"
       - "50000:50000"
     volumes:
-      - jenkins-data:/var/jenkins_home
-      # Mount docker socker to allow Jenkins to run docker commands (optional for this specific task but good practice)
+      - ./jenkins_home:/var/jenkins_home
+      # Mount docker socker to allow Jenkins to run docker commands
       - /var/run/docker.sock:/var/run/docker.sock
+      # Mount casc.yaml to a stable location to avoid being masked by jenkins_home volume
+      - ./jenkins-setup/casc.yaml:/var/jenkins_home/casc.yaml
     environment:
       # Pre-configure Java options if needed
       - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
@@ -22,6 +24,3 @@ services:
 
 networks:
   jenkins:
-
-volumes:
-  jenkins-data:

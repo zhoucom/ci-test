@@ -23,6 +23,11 @@ class DemoApplicationTests {
 
 	@Test
 	void shouldReturnHello() throws Exception {
+		// 模拟失败开头：如果环境变量或属性 fail.tests 为 true，则强制失败
+		if ("true".equals(System.getProperty("fail.tests"))) {
+			throw new RuntimeException("!!! [SIMULATED FAILURE] Test failed by fail.tests=true switch !!!");
+		}
+
 		this.mockMvc.perform(get("/"))
 				.andExpect(status().isOk())
 				.andExpect(content().string("Hello, Jenkins!"));

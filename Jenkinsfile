@@ -1,19 +1,20 @@
 pipeline {
-    agent {
-        docker {
-            image 'maven:3.9.6-eclipse-temurin-17' 
-            args '-v /root/.m2:/root/.m2' 
-        }
-    }
+    agent any
     
-    tools {
-        // Use the maven tool declared in global config or JCasC
-        maven 'Default'
+    // 定义参数，方便在 Jenkins 界面手动触发不同场景
+    parameters {
+        booleanParam(name: 'FAIL_BUILD', defaultValue: false, description: '强制编译失败 (模拟)')
+        booleanParam(name: 'FAIL_TESTS', defaultValue: false, description: '强制单元测试失败 (模拟)')
+        string(name: 'JACOCO_MIN_COVERAGE', defaultValue: '0.00', description: 'Jacoco 最小覆盖率要求 (0.00 - 1.00)')
     }
 
     stages {
         stage('Checkout') {
             steps {
+                script {
+                    // 初始化 GitHub 状态为 Pending
+                    setGitHubStatus('pending', 'Jenkins build started...')
+                }
                 checkout scm
             }
         }
@@ -22,18 +23,15 @@ pipeline {
             steps {
                 script {
                     try {
-                        sh 'mvn -B clean package'
+                        // 将 Jenkins 参数传递给 Maven
+                        sh "mvn -B clean verify \
+                            -Dfail.build=${params.FAIL_BUILD} \
+                            -Dfail.tests=${params.FAIL_TESTS} \
+                            -Djacoco.minimum.coverage=${params.JACOCO_MIN_COVERAGE}"
                     } catch (err) {
                         currentBuild.result = 'FAILURE'
                         throw err
                     }
-                }
-            }
-            post {
-                success {
-                    // Update GitHub commit status to PENDING or SUCCESS is handled by the GitHub Multibranch Plugin usually, 
-                    // but we can enforce it.
-                    echo 'Build successful.'
                 }
             }
         }
@@ -43,48 +41,37 @@ pipeline {
                 jacoco(
                     execPattern: '**/target/jacoco.exec',
                     classPattern: '**/target/classes',
-                    sourcePattern: '**/src/main/java',
-                    exclusionPattern: '**/src/test*'
+                    sourcePattern: '**/src/main/java'
                 )
             }
         }
     }
 
     post {
-        always {
-            cleanWs()
-        }
         success {
-            script {
-                if (env.BRANCH_NAME != null) {
-                    setGitHubPullRequestStatus(context: 'Jenkins/Build', message: 'Build passed', state: 'SUCCESS')
-                }
-            }
+            setGitHubStatus('success', 'Build, Tests and Jacoco passed!')
         }
         failure {
             script {
-                if (env.BRANCH_NAME != null) {
-                    setGitHubPullRequestStatus(context: 'Jenkins/Build', message: 'Build failed', state: 'FAILURE')
-                }
+                // 根据结果判断具体的错误信息上报给 GitHub
+                def msg = "Build failed. Check Jenkins logs for details."
+                if (params.FAIL_BUILD) msg = "Simulated Build Failure triggered."
+                if (params.FAIL_TESTS) msg = "Simulated Test Failure triggered."
+                
+                setGitHubStatus('failure', msg)
             }
+        }
+        always {
+            cleanWs()
         }
     }
 }
 
-// Function to manually set GitHub status if needed (though the GitHub Branch Source plugin often handles this automatically)
-// This requires the 'github' plugin and proper credentials/context.
-void setGitHubPullRequestStatus(Map args) {
-    // This is a placeholder. In a real Multibranch pipeline with GitHub Branch Source, 
-    // the status is sent automatically for the checkout.
-    // However, to send *custom* messages or contexts, you'd use the 'github-notify-step' or 'github-checks' blocks.
-    // Since we are using the simple pipeline, we'll rely on the default behavior first.
-    // If explicit reporting is needed, we would use:
-    // githubNotify context: args.context, description: args.message, status: args.state
-    
-    // For this setup, I will use the `githubNotify` step which allows custom messages.
+// 辅助方法：统一发送 GitHub 状态
+def setGitHubStatus(String state, String message) {
     try {
-        githubNotify context: args.context, description: args.message, status: args.state
+        githubNotify context: 'Jenkins/Build', description: message, status: state
     } catch (Exception e) {
-        echo "Warning: Could not send GitHub status: ${e.message}. Ensure credentials are set."
+        echo "Warning: Could not send GitHub status: ${e.message}"
     }
 }

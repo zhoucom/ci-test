@@ -1,4 +1,4 @@
-FROM jenkins/jenkins:2.426.2-jdk17
+FROM jenkins/jenkins:lts-jdk17
 
 USER root
 
@@ -7,9 +7,10 @@ RUN apt-get update && apt-get install -y maven
 
 USER jenkins
 
-# Install plugins
+# Automatic plugin installation
 COPY plugins.txt /usr/share/jenkins/ref/plugins.txt
-RUN jenkins-plugin-cli -f /usr/share/jenkins/ref/plugins.txt
+ENV JENKINS_UC=https://mirrors.huaweicloud.com/jenkins/updates
+RUN jenkins-plugin-cli --plugins -f /usr/share/jenkins/ref/plugins.txt
 
-# Copy Configuration as Code file (we will create this next)
+# Copy Configuration as Code file
 COPY casc.yaml /var/jenkins_home/casc.yaml
