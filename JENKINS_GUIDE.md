@@ -86,20 +86,31 @@ docker-compose up -d --build
 
 保存后，Jenkins 会立即开始第一次扫描 (Scanning)。如果你的仓库里已经有了 `Jenkinsfile`，它就会自动开始构建。
 
-## 6. 设置 GitHub 分支保护 (Branch Protection)
+## 6. 设置 GitHub 分支保护 (实现“不通过不准 Merge”)
 
-为了实现 "构建成功后才能 Merge" 的目标，需要在 GitHub 上设置规则。**注意：这需要等 Jenkins 至少跑成功一次构建后才能在 GitHub 列表里看到对应的 Check 选项。**
+你看到 "No checks have been added" 是正常的。**GitHub 的列表是动态的：只有当 GitHub 账号*收到过一次*来自 Jenkins 的状态报告后，那个名字才会出现在搜索框里。**
 
-1.  进入你的 GitHub 仓库页面。
-2.  点击顶部导航栏的 **Settings**。
-3.  在左侧栏点击 **Branches**。
-4.  点击 **Add branch protection rule**。
-5.  **Branch name pattern**: 输入 `main` (或者是你的保护分支名)。
-6.  勾选 **Require status checks to pass before merging** (合并前需要状态检查通过)。
-7.  在搜索框中搜索 Jenkins 上报的状态名。
-    - 通常是 `Jenkins/Build` 或者 `continuous-integration/jenkins/branch`。
-    - *如果在搜索框里找不到，请先去本地 Jenkins 手动触发一次构建并确保成功，GitHub 收到状态后这里就会出现。*
-8.  点击底部的 **Create** 保存规则。
+### 第一步：激活状态名 (最关键)
+
+为了让 GitHub 知道有一个叫 `Jenkins/Build` 的检查项，你需要先手动“调戏”一下 GitHub API。
+
+**请在你的 Mac 终端（或 Windows PowerShell）执行第 8 章中的 [1. 模拟构建成功] 的命令。**
+
+执行成功后，GitHub 就会记录下这个 `Jenkins/Build` 的名字。
+
+### 第二步：配置分支保护规则
+
+1.  进入 GitHub 仓库页面 -> **Settings** -> **Branches**。
+2.  点击 **Add branch protection rule**。
+3.  **Branch name pattern**: 输入 `main` (或者是你想保护的分支名)。
+4.  勾选 **Require a pull request before merging**。
+5.  勾选 **Require status checks to pass before merging**。
+6.  **在搜索框中搜索**: 输入 `Jenkins/Build`。
+    - *如果你上一步执行了 curl 命令，现在这里会跳出这个选项，点击勾选它。*
+7.  (可选) 勾选 **Require branches to be up to date before merging** —— 确保 PR 是基于最新代码测试的。
+8.  点击底部的 **Create** (或 **Save changes**)。
+
+---
 
 ## 7. 验证流程 (How to Verify)
 
