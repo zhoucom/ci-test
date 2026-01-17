@@ -46,19 +46,19 @@ docker-compose up -d --build
 8.  点击底部的 **Generate token** 按钮。
 9.  **关键**: 立即复制生成的 Token (以 `ghp_` 开头)，关掉页面就看不到了。
 
-## 4. 在 Jenkins 中配置凭据
+### 4. 在 Jenkins 配置 GitHub 凭据 (PAT)
 
-1.  回到 Jenkins [http://localhost:8080](http://localhost:8080)。
-2.  点击 **Manage Jenkins** (系统管理) -> **Credentials** (凭据)。
-3.  点击 **System** -> **Global credentials (unrestricted)**。
-4.  点击右上角的 **+ Add Credentials**。
-5.  填写内容：
-    - **Kind**: 选择 **Secret text** (注意不是 Username and password)。
-    - **Scope**: `Global`。
-    - **Secret**: 粘贴刚才复制的 **GitHub Token**。
-    - **ID**: `github-token` (这个 ID 很重要，Jenkinsfile 中可能会用到，虽然多分支流水线主要在配置里用)。
-    - **Description**: `GitHub PAT for Local Jenkins`。
-6.  点击 **Create**。
+1. 进入 **Manage Jenkins** -> **Credentials** -> **System** -> **Global credentials (unrestricted)** -> **Add Credentials**。
+2. **关键配置 (必看)**：
+   - **Kind**: 必须选择 **`Username with password`** (很多教程说选 Secret text，但在 Multibranch 模式下，选这个最稳定)。
+   - **Username**: 填写您的 GitHub 用户名。
+   - **Password**: 填写您的 GitHub **PAT (Token)**。
+   - **ID**: 建议起名为 `github-auth` (记住这个 ID)。
+   - **Description**: 随便写。
+3. 点击 **Create**。
+
+> [!TIP]
+> **报错排查**：如果您在创建工程时下拉框选不到 ID，请回头检查 Kind 是否选成了 "Secret text"。
 
 ## 5. 创建多分支流水线 (Multibranch Pipeline)
 
@@ -132,90 +132,220 @@ docker-compose up -d --build
     *   手动点一下 **Scan Repository Now** 试试。
 ## 8. 手动模拟 GitHub 状态 (使用 Curl)
 
-如果 Jenkins 无法连接 GitHub，或者你处于内网环境，可以使用以下 `curl` 命令手动更新 GitHub 的构建状态，从而控制 Pull Request 的 Merge 权限。
+你可以通过以下命令在 GitHub 界面上显示具体的失败原因。
 
-### A. 准备工作 (准备变量)
-你需要替换以下参数：
-- `GITHUB_TOKEN`: 你的 Personal Access Token。
-- `OWNER`: 你的 GitHub 用户名。
-- `REPO`: 仓库名称。
-- `SHA`: 你推送的那个提交的完整 **Commit SHA** (可以在 GitHub Commit 列表看到)。
-
----
-
-### B. Mac / Linux (Bash/Zsh) 命令
-
-**1. 模拟构建成功 (Success):**
-```bash
-curl -L \
-  -X POST \
-  -H "Accept: application/vnd.github+json" \
-  -H "Authorization: Bearer <YOUR_TOKEN>" \
-  -H "X-GitHub-Api-Version: 2022-11-28" \
-  https://api.github.com/repos/<OWNER>/<REPO>/statuses/<SHA> \
-  -d '{"state":"success","description":"Jenkins Build Passed","context":"Jenkins/Build"}'
-```
-
-**2. 模拟测试失败 (Failure - Test Error):**
-```bash
-curl -L \
-  -X POST \
-  -H "Accept: application/vnd.github+json" \
-  -H "Authorization: Bearer <YOUR_TOKEN>" \
-  https://api.github.com/repos/<OWNER>/<REPO>/statuses/<SHA> \
-  -d '{"state":"failure","description":"Unit tests failed","context":"Jenkins/Build"}'
-```
-
-**3. 模拟覆盖率失败 (Failure - Jacoco Error):**
-```bash
-curl -L \
-  -X POST \
-  -H "Accept: application/vnd.github+json" \
-  -H "Authorization: Bearer <YOUR_TOKEN>" \
-  https://api.github.com/repos/<OWNER>/<REPO>/statuses/<SHA> \
-  -d '{"state":"failure","description":"Jacoco coverage below threshold (0%)","context":"Jenkins/Build"}'
-```
+### A. 准备工作 (变量)
+根据你的环境，你的变量如下：
+- **Token**: `ghp_Q5V3j...` (建议设为环境变量)
+- **Repo**: `zhoucom/ci-test`
+- **SHA**: 在 PR 的 Commits 页面复制长 Hash
 
 ---
 
-### C. Windows (PowerShell) 命令
+### B. Mac / Linux (Bash) 命令场景
 
-**1. 模拟构建成功 (Success):**
+| 场景 | 命令 |
+| :--- | :--- |
+| **0. 初始化/运行中** | `curl -L -X POST -H "Authorization: Bearer <TOKEN>" https://api.github.com/repos/zhoucom/ci-test/statuses/<SHA> -d '{"state":"pending","description":"Build is running...","context":"Jenkins/Build"}'` |
+| **1. 编译失败** | `curl -L -X POST -H "Authorization: Bearer <TOKEN>" https://api.github.com/repos/zhoucom/ci-test/statuses/<SHA> -d '{"state":"failure","description":"Build Failed: syntax error in HelloController.java","context":"Jenkins/Build"}'` |
+| **2. 测试失败** | `curl -L -X POST -H "Authorization: Bearer <TOKEN>" https://api.github.com/repos/zhoucom/ci-test/statuses/<SHA> -d '{"state":"failure","description":"Tests Failed: 2 tests failed","context":"Jenkins/Build"}'` |
+| **3. 覆盖率低** | `curl -L -X POST -H "Authorization: Bearer <TOKEN>" https://api.github.com/repos/zhoucom/ci-test/statuses/<SHA> -d '{"state":"failure","description":"Jacoco Error: Coverage 10.5% < 80%","context":"Jenkins/Build"}'` |
+| **4. 恢复成功** | `curl -L -X POST -H "Authorization: Bearer <TOKEN>" https://api.github.com/repos/zhoucom/ci-test/statuses/<SHA> -d '{"state":"success","description":"All checks passed!","context":"Jenkins/Build"}'` |
+
+---
+
+### C. Windows (PowerShell) 命令场景
+
+在 PowerShell 中，先执行这一行设置变量：
 ```powershell
-$headers = @{
-    "Authorization" = "Bearer <YOUR_TOKEN>"
-    "Accept"        = "application/vnd.github+json"
-}
-$body = @{
-    state       = "success"
-    description = "Jenkins Build Passed"
-    context     = "Jenkins/Build"
-} | ConvertTo-Json
-
-Invoke-RestMethod -Method Post -Uri "https://api.github.com/repos/<OWNER>/<REPO>/statuses/<SHA>" -Headers $headers -Body $body
+$headers = @{"Authorization" = "Bearer ghp_xxx"; "Accept" = "application/vnd.github+json"}
+$url = "https://api.github.com/repos/zhoucom/ci-test/statuses/<SHA>"
 ```
 
-**2. 模拟测试失败 (Failure - Test Error):**
+**0. 模拟运行中 (Pending):**
 ```powershell
-$body = @{
-    state       = "failure"
-    description = "Unit tests failed"
-    context     = "Jenkins/Build"
-} | ConvertTo-Json
-
-Invoke-RestMethod -Method Post -Uri "https://api.github.com/repos/<OWNER>/<REPO>/statuses/<SHA>" -Headers $headers -Body $body
+$body = @{ state="pending"; description="Build is running..."; context="Jenkins/Build" } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri $url -Headers $headers -Body $body
 ```
 
-**3. 模拟覆盖率失败 (Failure - Jacoco Error):**
-```powershell
-$body = @{
-    state       = "failure"
-    description = "Jacoco coverage below threshold"
-    context     = "Jenkins/Build"
-} | ConvertTo-Json
+*(其他编译/测试/成功命令同上文，只需修改 $body 中的 state 和 description)*
 
-Invoke-RestMethod -Method Post -Uri "https://api.github.com/repos/<OWNER>/<REPO>/statuses/<SHA>" -Headers $headers -Body $body
+---
+
+## 9. 真实代码模拟 (触发 Build / Test 失败)
+
+我也在代码里为你准备了“失败开关”，你可以在本地 Maven 构建时通过参数触发真实的失败：
+
+1.  **触发编译失败**:
+    运行 `mvn verify -Dfail.build=true`
+    *(使用了 maven-enforcer-plugin 模拟)*
+
+2.  **触发测试失败**:
+    运行 `mvn verify -Dfail.tests=true`
+    *(Controller 测试会主动抛出 AssertionError)*
+
+3.  **触发覆盖率检查失败**:
+    运行 `mvn verify -Djacoco.minimum.coverage=1.0`
+    *(强制要求 100% 覆盖率，目前代码肯定达不到，会触发报错)*
+
+---
+
+## 10. 进阶：如何规模化管理 (GitHub App)
+
+你提到的“每个新分支都要触发一次 Curl”确实很麻烦。这是因为你目前使用的是 **PAT (Personal Access Token)** 这种“个人补丁”模式。
+
+在企业级开发中，我们使用 **GitHub App** 来解决：
+
+### 为什么用 GitHub App？
+1.  **自动激活**：一旦 App 安装到仓库，它的所有 Check 权限会自动对该 Repo 生效。
+2.  **批量管理**：你可以创建一个 App（比如叫 `Company-CI`），然后点击 `Install App` 并勾选 `All repositories`。这样你名下所有（及未来创建）的工程都会自动拥有这个检查项。
+3.  **安全性**：不需要暴露个人 Token，权限粒度更细。
+
+### 简单的配置思路：
+1.  **在 GitHub 创建 App**: `Settings` -> `Developer settings` -> `GitHub Apps` -> `New GitHub App`。
+2.  **设置权限**: 勾选 `Checks: Read & write` 和 `Statuses: Read & write`。
+3.  **安装**: 点击 `Install App` 安装到你的整个 zhoucom 组织或个人账号下。
+4.  **Jenkins 集成**: 在 Jenkins 的 GitHub 配置里，不选 `Secret Text`，而是使用 `GitHub App` 类型的凭据（需要上传 `.pem` 私钥）。
+
+---
+
+## 11. 在 Jenkins UI 中一键触发失败 (参数化构建)
+
+我已经更新了 `Jenkinsfile`，支持在 Jenkins 界面上直接勾选开关来模拟失败。
+
+### A. 如何在 Jenkins 开启“参数化”
+由于多分支流水线（Multibranch Pipeline）是自动扫描 `Jenkinsfile` 的，通常在文件更新后，你需要：
+1.  在 Jenkins 项目页面点击左侧的 **Scan Repository Now**。
+2.  等待扫描完成。
+3.  点击具体的某一个分支（如 `main` 或 `test-feature`）。
+4.  如果你是第一次运行，左侧可能还是 `Build Now`；**请点击手动运行一次**。
+5.  运行过一次后，左侧菜单会变成 **Build with Parameters**。
+
+### B. 模拟步骤 (演示)
+
+1.  点击 **Build with Parameters**。
+2.  你会看到三个选项：
+    - **FAIL_BUILD**: 勾选后，Maven 会因为 Enforcer 插件报错，Jenkins 会向 GitHub 发送 "Simulated Build Failure"。
+    - **FAIL_TESTS**: 勾选后，单元测试会抛出异常，Jenkins 发送 "Simulated Test Failure"。
+    - **JACOCO_MIN_COVERAGE**: 输入 `1.00`，会因为覆盖率达不到 100% 而报错。
+3.  点击 **Build** 按钮。
+
+### C. 观察结果
+- **Jenkins 内部**: 你会在 Console Output 看到我自定义的错误信息：`!!! [SIMULATED FAILURE] ... !!!`。
+- **GitHub PR 界面**: 刷新 PR，你会看到底部 Checks 自动从 Pending 变成 Failure，并且 **Description 描述内容** 与你勾选的开关完全对应。
+
+---
+
+### 总结：你的模拟调试流程
+1.  **代码改动**: 在 IDE 改代码并 Push。
+2.  **Jenkins 触发**: 去 Jenkins 界面选一个失败场景点 Build。
+3.  **GitHub 确认**: 去 PR 页面确认 Merge 按钮是否被锁死，以及报错文案是否正确。
+---
+
+## 12. 手动安装插件并保存为镜像 (解决网络异常)
+
+由于国内网络环境复杂，自动下载插件经常失败。最稳妥的办法是：**先启动一个“干净”的 Jenkins，在 UI 界面手动装好插件，然后将整个状态“打包”成镜像推送到 Docker Hub。**
+
+### 第一步：启动干净的 Jenkins
+我已经将 `Dockerfile` 中的 Jenkins 版本切换到了最稳定的 `lts-jdk17` 镜像，并注释掉了自动下载代码。现在执行：
+```bash
+docker-compose up -d --build
 ```
 
-> [!TIP]
-> **注意 context 的统一**：如果你在 GitHub 分支保护规则里设置的检查项名字是 `Jenkins/Build`，那么 curl 命令里的 `"context"` 也必须是这个名字，GitHub 才能正确识别。
+### 第二步：正确的手动安装顺序 (防止依赖报错)
+Jenkins 插件之间有复杂的依赖关系（如你遇到的 `workflow-api` 报错）。请务必按照以下顺序操作，**不要手动点开每一个小插件安装**：
+
+1. **初始安装向导 (墙裂建议)**：
+   如果你是第一次启动，访问 `http://localhost:8080` 会看到安装向导。请直接点击 **"Install suggested plugins" (安装推荐插件)**。这会帮你自动装好 90% 的基础依赖。
+
+2. **如果错过了向导**：
+   去 **Manage Jenkins** -> **Plugins** -> **Available Plugins**，只需搜索并安装这 **两个大包**，它们会自动勾选所有依赖：
+   - **Pipeline** (搜索 `workflow-aggregator`)：安装这一个，它会带起你报错里提到的所有 `workflow-api`、`workflow-step-api` 等。
+   - **GitHub Branch Source**：安装它，它会带起所有 `scm-api` 等依赖。
+
+3. **补充安装**：
+   在上述两个大包装完后，再单独补装：
+   - `jacoco`
+    - `blueocean`
+
+> [!IMPORTANT]
+> **安装技巧**：在勾选完插件点安装后，请务必勾选界面底部的 **"Restart Jenkins when installation is complete"**。很多依赖错误是通过重启解决的。
+
+### 第三步：如果“Add source”里看不到 GitHub？
+如果你在配置界面点击 **Add source** 却只看到 "Single repository & branch"（如你截图所示），这说明 **GitHub Branch Source** 插件没有安装成功或没有激活。
+
+请按照以下步骤排查：
+1. **检查已安装列表**：
+   - 进入 **Manage Jenkins** -> **Plugins** -> **Installed plugins**。
+   - 搜索 `GitHub Branch Source`。
+2. **确认状态**：
+   - 如果它在列表里，但右侧有红色报错（类似你之前遇到的 `dependency errors`），请看它的具体提示。通常是缺少了 `GitHub Plugin` 或 `SCM API`。
+   - 如果它不在列表里，请回到 **Available Plugins** 重新搜索并安装。
+3. **强制激活依赖**：
+   - 最简单粗暴的方法：直接在 **Available Plugins** 搜索并安装 **"GitHub Integration"** 和 **"Pipeline"**。这两个是“大包”，安装它们通常会自动勾选所有底层的小碎片。
+4. **重启是万能的**：
+   - 安装完一定要勾选底部的 **"Restart Jenkins"**，或者直接在终端 `docker-compose restart jenkins`。
+
+---
+
+### 第四步：将安装好插件的状态保存为新镜像 (重要提示！)
+
+> [!WARNING]
+> **注意卷挂载 (Volume) 的陷阱**：
+> 如果你使用了 `docker-compose.yml` 里的 `- ./jenkins_home:/var/jenkins_home` 挂载，那么在 UI 里装的插件其实是保存在**宿主机磁盘**上的。
+> **`docker commit` 无法保存挂载卷里的数据**。如果你现在 commit，得到的新镜像里是不含插件的。
+
+#### 正确的“打包”思路（二选一）：
+
+**方案 A：通过 Dockerfile 固化（推荐）**
+这是你目前正在用的方式。当你确认了哪些插件是必须的（如 `workflow-aggregator`, `jacoco` 等），把它们填入 `jenkins-setup/plugins.txt`，然后执行：
+```bash
+docker-compose up --build
+```
+这样插件会被安装到镜像的 `/usr/share/jenkins/ref/plugins` 中。
+
+**方案 B：临时“脱离挂载”构建备份镜像**
+1. 停止现有容器。
+2. 启动一个**不带卷挂载**的临时容器：
+   ```bash
+   docker run -d --name temp-jenkins jenkins/jenkins:lts-jdk17
+   ```
+3. 在这个容器里装好插件。
+4. 执行 `docker commit temp-jenkins my-custom-jenkins:v1.0`。
+5. 这样镜像里就真正含有了插件数据。
+
+### 第四步：推送到 Docker Hub
+1. **登录**: `docker login` (输入你的 Docker Hub 账号密码)。
+2. **推送**: 
+   ```bash
+   docker push zhoucom/jenkins-custom:v1.0
+   ```
+3. **导出文件 (离线备用)**:
+   ```bash
+   docker save -o jenkins-v1.0.tar zhoucom/jenkins-custom:v1.0
+   ```
+
+---
+
+## 13. 如何通过 Docker Hub 镜像分发给其他人
+
+一旦你完成了上述步骤，你的同事或另一台机器就不再需要经历“下载插件”的痛苦了：
+
+1. **修改 docker-compose.yml**:
+   将 `build: ./jenkins-setup` 改为直接使用你刚推上去的镜像：
+   ```yaml
+   services:
+     jenkins:
+       image: zhoucom/jenkins-custom:v1.0  # 直接使用你做好的成品镜像
+       # build: ./jenkins-setup (注释掉这一行)
+   ```
+
+2. **一键启动**:
+   ```bash
+   docker-compose up -d
+   ```
+   **秒开！** 所有的插件都已经预装在里面了。
+
+### 场景三：数据持久化 (Volume)
+请注意，镜像只负责保存“程序和插件”，而不保存“作业记录、构建历史、账号”。所有的工作内容都保存在 `docker-compose.yml` 中定义的 `jenkins-data` 卷里。
+- 如果你想备份任务和配置，你应该备份 Docker 的 Volume 文件夹（通常在 `/var/lib/docker/volumes/`），而不是只备份镜像。
