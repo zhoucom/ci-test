@@ -71,9 +71,9 @@ pipeline {
 def setGitHubStatus(String state, String message) {
     echo "Attempting to set GitHub status to ${state}: ${message}"
     try {
-        // 只有在 github 插件安装的情况下才调用
-        githubNotify context: 'Jenkins/Build', description: message, status: state
+        // 关键点：这个插件要求状态必须是大写（SUCCESS, FAILURE, PENDING）
+        githubNotify context: 'Jenkins/Build', description: message, status: state.toUpperCase()
     } catch (Throwable e) {
-        echo "Note: Could not send GitHub status (Plugin might be missing): ${e.message}"
+        echo "Note: Could not send GitHub status (Check if plugin is installed and configured): ${e.message}"
     }
 }
