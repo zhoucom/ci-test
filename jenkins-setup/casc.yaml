@@ -1,0 +1,28 @@
+jenkins:
+  systemMessage: "Jenkins configured via JCasC"
+  numExecutors: 2
+  mode: NORMAL
+  scmCheckoutRetryCount: 2
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+       - id: "admin"
+         password: "admin"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+tool:
+  maven:
+    installations:
+      - name: "Default"
+        properties:
+          - installSource:
+              installers:
+                - maven:
+                    id: "3.9.6"
+
+unclassified:
+  location:
+    url: http://localhost:8080/

@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  jenkins:
+    build: 
+      context: ./jenkins-setup
+    container_name: jenkins-blueocean
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "50000:50000"
+    volumes:
+      - jenkins-data:/var/jenkins_home
+      # Mount docker socker to allow Jenkins to run docker commands (optional for this specific task but good practice)
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      # Pre-configure Java options if needed
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
+      - CASC_JENKINS_CONFIG=/var/jenkins_home/casc.yaml
+    networks:
+      - jenkins
+
+networks:
+  jenkins:
+
+volumes:
+  jenkins-data:
