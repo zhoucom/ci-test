@@ -69,9 +69,11 @@ pipeline {
 
 // 辅助方法：统一发送 GitHub 状态
 def setGitHubStatus(String state, String message) {
+    echo "Attempting to set GitHub status to ${state}: ${message}"
     try {
+        // 只有在 github 插件安装的情况下才调用
         githubNotify context: 'Jenkins/Build', description: message, status: state
-    } catch (Exception e) {
-        echo "Warning: Could not send GitHub status: ${e.message}"
+    } catch (Throwable e) {
+        echo "Note: Could not send GitHub status (Plugin might be missing): ${e.message}"
     }
 }
