@@ -6,7 +6,6 @@ USER root
 RUN apt-get update && apt-get install -y maven
 
 USER jenkins
-
 # Automatic plugin installation
 COPY plugins.txt /usr/share/jenkins/ref/plugins.txt
 ENV JENKINS_UC=https://mirrors.huaweicloud.com/jenkins/updates
