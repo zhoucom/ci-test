@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  jenkins-native:
+    build: .
+    container_name: jenkins-native
+    ports:
+      - "8081:8080"
+      - "50001:50000"
+    volumes:
+      - ../:/var/jenkins_home/workspace/native-test
+      - jenkins_native_home:/var/jenkins_home
+    environment:
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
+      - GIT_TOKEN=${GIT_TOKEN}
+    networks:
+      - jenkins-net
+
+networks:
+  jenkins-net:
+
+volumes:
+  jenkins_native_home:

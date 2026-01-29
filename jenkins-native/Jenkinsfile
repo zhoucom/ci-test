@@ -1,0 +1,131 @@
+pipeline {
+    agent any
+
+    // Define parameters for failure simulation and quality gates
+    parameters {
+        stringParam(name: 'REPO_SLUG', defaultValue: 'zhoucom/jenkins-springboot', description: 'GitHub Repo (owner/repo)')
+        stringParam(name: 'BRANCH_NAME', defaultValue: 'main', description: 'Branch to build')
+        booleanParam(name: 'FAIL_BUILD', defaultValue: false, description: 'Simulate Build Failure')
+        booleanParam(name: 'FAIL_TESTS', defaultValue: false, description: 'Simulate Test Failure')
+        stringParam(name: 'COVERAGE_THRESHOLD', defaultValue: '80', description: 'Minimum Code Coverage % (Absolute)')
+        stringParam(name: 'MAX_QUALITY_ISSUES', defaultValue: '10', description: 'Max allowed PMD quality issues')
+    }
+
+    triggers {
+        pollSCM('H/2 * * * *') // Polling every 2 minutes for auto-build
+    }
+
+    environment {
+        // --- CONFIGURATION ---
+        // Use parameters if set, otherwise defaults
+        REPO_SLUG = "${params.REPO_SLUG}"
+        REPO_URL  = "https://github.com/${env.REPO_SLUG}.git"
+        BRANCH_NAME = "${params.BRANCH_NAME}"
+        
+        // --- SECRETS (From Global Env Vars) ---
+        // GIT_TOKEN
+    }
+
+    stages {
+        stage('Initialize & Checkout') {
+            steps {
+                script {
+                    echo "Initializing Enhanced Native Pipeline..."
+                    // Ensure scripts are executable
+                    sh "chmod +x jenkins-native/scripts/*.sh"
+                    
+                    // Capture COMMIT SHA
+                    env.COMMIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+                    echo "Current Commit SHA: ${env.COMMIT_SHA}"
+
+                    // Notify GitHub: PENDING
+                    sh "./jenkins-native/scripts/update_github_status.sh ${REPO_SLUG} ${env.COMMIT_SHA} pending 'Build started...' ${env.GIT_TOKEN}"
+                }
+            }
+        }
+
+        stage('Build & Test') {
+            steps {
+                script {
+                    echo "Starting Build and Test..."
+                    try {
+                        // Pass simulation params to Maven
+                        sh "mvn clean package -Dfail.build=${params.FAIL_BUILD} -Dfail.tests=${params.FAIL_TESTS}"
+                    } catch (err) {
+                        echo "Build failed!"
+                        currentBuild.result = 'FAILURE'
+                        // Propagate error to top-level catch/post
+                        error("Build or Test failed based on simulation params or code errors.")
+                    }
+                }
+            }
+        }
+
+        stage('Lightweight Quality Analysis') {
+            steps {
+                script {
+                    echo "Running PMD & Checkstyle..."
+                    try {
+                        // Generate PMD and Checkstyle reports
+                        sh "mvn pmd:pmd checkstyle:checkstyle -Dpmd.failOnViolation=false -Dcheckstyle.failOnViolation=false"
+                        
+                        // Enforce issues limit
+                        sh "./jenkins-native/scripts/check_quality_lite.sh target/pmd.xml ${params.MAX_QUALITY_ISSUES}"
+                    } catch (err) {
+                        echo "Quality Gate Failed due to too many issues!"
+                        currentBuild.result = 'UNSTABLE' 
+                    }
+                }
+            }
+        }
+
+        stage('Quality Gate (Coverage)') {
+            steps {
+                script {
+                    echo "Checking Code Coverage Gate..."
+                    try {
+                        // Assuming JaCoCo generates report at target/site/jacoco/jacoco.xml
+                        sh "./jenkins-native/scripts/check_coverage.sh target/site/jacoco/jacoco.xml ${params.COVERAGE_THRESHOLD}"
+                    } catch (err) {
+                        echo "Quality Gate Failed!"
+                        currentBuild.result = 'FAILURE'
+                        error("Code coverage is below the required threshold of ${params.COVERAGE_THRESHOLD}%")
+                    }
+                }
+            }
+        }
+
+        stage('External Jenkinsfile') {
+            steps {
+                script {
+                    if (fileExists('Jenkinsfile')) {
+                        echo "Found specialized Jenkinsfile in repo. You might want to switch your job configuration to use SCM-based Jenkinsfile directly."
+                        // We don't automatically load it here to avoid recursion/confusion, 
+                        // but we notify the user.
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            script {
+                if (env.COMMIT_SHA) {
+                    sh "./jenkins-native/scripts/update_github_status.sh ${REPO_SLUG} ${env.COMMIT_SHA} success 'Build Passed!' ${env.GIT_TOKEN}"
+                }
+            }
+        }
+        failure {
+            script {
+                if (env.COMMIT_SHA) {
+                    def msg = "Build Failed. Check logs."
+                    if (params.FAIL_BUILD) msg = "Simulated Build Failure."
+                    if (params.FAIL_TESTS) msg = "Simulated Test Failure."
+                    
+                    sh "./jenkins-native/scripts/update_github_status.sh ${REPO_SLUG} ${env.COMMIT_SHA} failure '${msg}' ${env.GIT_TOKEN}"
+                }
+            }
+        }
+    }
+}
